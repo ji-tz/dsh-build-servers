@@ -2,20 +2,20 @@
 
 English | [中文](README.zh.md)
 
-A DeepSeek Harness bundle for working with remote build machines from inside a conversation: bind one server to the current session, upload local source, run **build → install → test**, watch the result, and open an SSH shell without leaving the chat.
+A DeepSeek Harness bundle for working with remote build machines from inside a conversation: bind one server to the current session, upload local source, run **configure → build → install → test**, watch the result, and open an SSH shell without leaving the chat.
 
 ![Build server status chip](docs/status-chip.png)
 
-> Status: v0.2.0, early but usable. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
+> Status: v1.0.0. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
 
 ## Features
 
 - **Network-only server panel** — name, SSH target/alias, port, enable/disable, live OS/IP probe. No paths or commands are stored on the server entry.
-- **Per-session binding** — each conversation binds one server. A workspace remembers the last server used, and new sessions in that workspace inherit it; an explicit unbind is remembered too.
-- **Session compile settings** — local source directory, remote build path, upload excludes, and the `build` / `install` / `test` commands are stored per session.
-- **Upload → build → install → test** — local `tar` piped into `ssh … tar -x`, followed by the configured stages through `bash -lc`; stops at the first failure and can be stopped mid-stage. Live stage status, exit codes, durations, and output.
-- **SSH terminal** — a persistent `ssh -tt … bash -l` per server, shared by the UI, the session dialog, and the agent tools. Line mode (no full-screen TUI).
-- **Conversation status chip** — a green/amber/red dot plus the server name at the bottom of the composer; clicking opens an in-place status popover with load, memory, disk, uptime, and the current pipeline stage.
+- **Per-session binding** — each conversation binds one server. New sessions start as **Local**; pick a server from the composer picker next to the permission control. A workspace still records the last server used, but no longer inherits it automatically.
+- **Session compile settings** — local source directory, sync path (where the source is copied), build path (where the stage commands run, defaulting to `<sync path>/build`), upload excludes, and the `configure` / `build` / `install` / `test` commands are stored per session. Empty stage commands fall back to `cmake ..`, `cmake --build . -j$(nproc)`, `cmake --install .`, and `ctest`.
+- **Upload → configure → build → install → test** — local `tar` piped into `ssh … tar -x`, followed by the configured stages through `bash -lc`; stops at the first failure and can be stopped mid-stage. Live stage status, exit codes, durations, and output.
+- **SSH terminal** — a persistent `ssh -tt … bash -l` per server, shared by the UI, the terminal tabs, and the agent tools. Line mode (no full-screen TUI). The right sidebar guide also has a **New remote terminal** card that opens this session's build-server shell in a tab.
+- **Conversation status chip** — appears only when a server is bound: the original green status light plus the current state (Ready, Upload, Configure, Build, Install, Test, Reconnecting, Disconnected); clicking opens an in-place status popover with load, memory, disk, uptime, and a state strip. Local sessions show no chip.
 - **Agent tools** — `build_server` (`status` / `run` / `pipeline` / `stop`) and `remote_terminal` (`list` / `open` / `send` / `read` / `close`), so the model can drive the same server and shell as the UI.
 
 ## Architecture
@@ -25,7 +25,7 @@ flowchart LR
   subgraph Page["DSH Web page"]
     Panel["Build servers panel<br/>network entries + probe"]
     Chip["Composer status chip<br/>+ status popover"]
-    Menus["Session menu / right tab menu<br/>bind · settings · terminal"]
+    Picker["Composer server picker<br/>Local / build server"]
   end
   subgraph Host["dsh Host process"]
     Route["HTTP route /build-servers"]
@@ -52,11 +52,11 @@ The browser never talks to SSH directly: every operation goes through a same-ori
 
 ## Install
 
-From npm (recommended for v0.2.0 and later):
+From npm (recommended for v1.0.0 and later):
 
 ```text
 plugin_manager install_bundle
-  target: dsh-build-servers@0.2.0
+  target: dsh-build-servers@1.0.0
 ```
 
 From a checkout of this repository:
@@ -85,14 +85,14 @@ This repository ships a format-1 market index at [`market/index.json`](market/in
 https://raw.githubusercontent.com/ji-tz/dsh-build-servers/main/market/index.json
 ```
 
-The index currently points at a commit-pinned Git source. After the first npm release it can point at the registry version instead.
+The index points at the npm registry version.
 
 ## Use
 
 1. Open the left sidebar's **Build servers** panel and add a server: display name, SSH target (alias / `user@host` / IP), optional port.
-2. In a conversation, open the session row's `...` menu → **Build server…**, pick the server, and fill in **Compile settings**: local source path, remote build path, upload excludes, and the stage commands.
-3. The bottom status chip now shows the server. Click it for load/memory/disk and the stage status. Run a pipeline from the session dialog or the chip's popover; logs are in the same dialog.
-4. The session menu, the right sidebar tab menu (**Build server terminal**), and the status chip all reach the same server. Agent tools use the same binding.
+2. In a new session, use the compact picker next to the permission chip in the composer toolbar to choose a build server (**Local** by default). Open **Compile settings** from the status popover: local source path (defaults to the current workspace), sync path, build path (defaults to `<sync path>/build`), upload excludes, and the stage commands.
+3. With a server bound, a status chip appears below the composer showing the status light plus **Ready / Upload / Configure / Build / Install / Test / Reconnecting / Disconnected**. Local sessions have no chip. Click it for load/memory/disk and the state strip; its **Compile settings** button opens this session's project settings.
+4. **Compile settings** is also one click away on the right of the bound server row in the composer picker menu. Build-server network entries live only in the left **Build servers** panel. Agent tools use the same binding.
 
 ## Storage
 
@@ -110,14 +110,14 @@ Nothing is written to the remote machine except the uploaded source and whatever
 
 - All SSH traffic uses your local OpenSSH configuration and agent; the plugin never sees passwords.
 - The Host route is bound to the same local Web server as the UI, requires a same-origin marker header for mutations, and is not reachable from other origins.
-- `build` / `install` / `test` and the terminal run **arbitrary commands** with your SSH identity. Only add machines you trust, and keep the stage commands and shell contents under review.
+- `configure` / `build` / `install` / `test` and the terminal run **arbitrary commands** with your SSH identity. Only add machines you trust, and keep the stage commands and shell contents under review.
 - The `remote_terminal` and `build_server` tools execute without an extra approval prompt. If you need approval, add a `ctx.tools.guard()` or gate the tools in the preset.
 
 ## Limitations
 
 - The terminal is line-oriented; full-screen applications (`vim`, `top`) are not supported.
 - The status popover and the build dialog use frame-level overlays; they are positioned from the chip's bounding box and close on outside click / `Escape`.
-- The bundle is published as [`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers) on npm; `0.2.0` is the first renamed release. The GitHub repository remains the source of truth.
+- The bundle is published as [`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers) on npm; `1.0.0` is the first stable release. The GitHub repository remains the source of truth.
 - Host helper tests run with Node; the UI has no automated tests.
 
 ## Development

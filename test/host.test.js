@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
-import { __test } from '../index.js'
+import { __test, apply } from '../index.js'
 
 const {
+  buildPathFor,
+  stageCommandFor,
   formatBytes,
   normalizeServer,
   normalizeSettings,
@@ -12,6 +17,7 @@ const {
   remotePath,
   sanitizeTerminal,
   shellQuote,
+  terminalRawSince,
   terminalSince,
 } = __test
 
@@ -68,16 +74,159 @@ test('normalizeSettings requires a remote path when uploading', () => {
 
   const ok = normalizeSettings({
     localPath: 'D:\\src',
-    repoPath: '~/src/app',
-    stages: { build: 'make' },
+    syncPath: '~/src/app',
+    buildPath: '~/src/app/out',
+    stages: { configure: 'cmake ..', build: 'cmake --build . -j32' },
   })
   assert.deepEqual(ok.problems, [])
-  assert.equal(ok.settings.repoPath, '~/src/app')
-  assert.equal(ok.settings.stages.build, 'make')
+  assert.equal(ok.settings.syncPath, '~/src/app')
+  assert.equal(ok.settings.buildPath, '~/src/app/out')
+  assert.equal(ok.settings.stages.configure, 'cmake ..')
+  assert.equal(ok.settings.stages.build, 'cmake --build . -j32')
+})
+
+test('normalizeSettings migrates a legacy repoPath to syncPath', () => {
+  const migrated = normalizeSettings({ localPath: 'D:\\src', repoPath: '~/src/app' })
+  assert.deepEqual(migrated.problems, [])
+  assert.equal(migrated.settings.syncPath, '~/src/app')
+  assert.equal(migrated.settings.buildPath, '')
+})
+
+test('buildPathFor defaults to the sync path build subdirectory', () => {
+  assert.equal(buildPathFor({ syncPath: '~/src/app' }), '~/src/app/build')
+  assert.equal(buildPathFor({ syncPath: '/opt/src/app/' }), '/opt/src/app/build')
+  assert.equal(buildPathFor({ syncPath: '~/src/app', buildPath: '/opt/out' }), '/opt/out')
+  assert.equal(buildPathFor({}), '~')
+})
+
+test('stageCommandFor falls back to the built-in cmake commands', () => {
+  assert.equal(stageCommandFor({ stages: {} }, 'configure'), 'cmake ..')
+  assert.equal(stageCommandFor({ stages: {} }, 'build'), 'cmake --build . -j$(nproc)')
+  assert.equal(stageCommandFor({ stages: {} }, 'install'), 'cmake --install .')
+  assert.equal(stageCommandFor({ stages: {} }, 'test'), 'ctest')
+  assert.equal(stageCommandFor({ stages: { build: 'make -j8' } }, 'build'), 'make -j8')
 })
 
 test('terminalSince returns only text after the cursor', () => {
   const session = { total: 6, output: 'abcdef' }
   assert.equal(terminalSince(session, 3), 'def')
   assert.equal(terminalSince(session, 0), 'abcdef')
+})
+
+test('terminalRawSince keeps ANSI text after a cursor and clamps trimming', () => {
+  const session = { rawTotal: 10, raw: 'abcdefghij' }
+  assert.equal(terminalRawSince(session, 0), 'abcdefghij')
+  assert.equal(terminalRawSince(session, 7), 'hij')
+  const trimmed = { rawTotal: 20, raw: 'abcdefghij' }
+  assert.equal(terminalRawSince(trimmed, 0), 'abcdefghij')
+  assert.equal(terminalRawSince(trimmed, 14), 'efghij')
+})
+
+test('GET /session suggests the workspace as the local source default', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-build-servers-'))
+  const previous = process.env.DSH_PROFILE_DIR
+  process.env.DSH_PROFILE_DIR = dir
+  let handler
+  const disposers = []
+  const dispose = (value) => {
+    if (typeof value === 'function') disposers.push(value)
+    return value
+  }
+  apply({
+    effect: (run) => dispose(run()),
+    webServer: {
+      register(route) {
+        handler = route.handler
+        return () => {}
+      },
+      getOrigin: () => 'http://127.0.0.1',
+    },
+    tools: { register: () => () => {} },
+    workspaceRegistry: {
+      list: () => [
+        { id: 'ws_demo', path: 'D:\\workspace\\demo', sessionIds: ['session-demo'] },
+      ],
+    },
+  })
+  try {
+    let body
+    await handler(
+      { method: 'GET', url: '/build-servers/session?session=session-demo', headers: {} },
+      {
+        writeHead() {},
+        end(payload) {
+          body = JSON.parse(payload)
+        },
+      },
+    )
+    assert.equal(body.ok, true)
+    assert.equal(body.workspace, 'ws_demo')
+    assert.deepEqual(body.defaults, {
+      localPath: 'D:\\workspace\\demo',
+      syncPath: '',
+      syncExclude: '.git build node_modules .venv .dsh-plugins',
+    })
+  } finally {
+    for (const disposer of disposers) disposer()
+    process.env.DSH_PROFILE_DIR = previous
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a new session stays local instead of inheriting the workspace server', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-build-servers-'))
+  const previous = process.env.DSH_PROFILE_DIR
+  process.env.DSH_PROFILE_DIR = dir
+  await writeFile(
+    join(dir, 'build-servers.json'),
+    JSON.stringify({
+      version: 2,
+      servers: [{ id: 'srv_nis68', name: 'nis-68', target: 'nis-68', enabled: true }],
+    }),
+  )
+  await writeFile(
+    join(dir, 'build-server-bindings.json'),
+    JSON.stringify({ workspaces: { ws_demo: 'srv_nis68' }, sessions: {} }),
+  )
+  let handler
+  const disposers = []
+  const dispose = (value) => {
+    if (typeof value === 'function') disposers.push(value)
+    return value
+  }
+  apply({
+    effect: (run) => dispose(run()),
+    webServer: {
+      register(route) {
+        handler = route.handler
+        return () => {}
+      },
+      getOrigin: () => 'http://127.0.0.1',
+    },
+    tools: { register: () => () => {} },
+    workspaceRegistry: {
+      list: () => [
+        { id: 'ws_demo', path: 'D:\\workspace\\demo', sessionIds: ['session-demo'] },
+      ],
+    },
+  })
+  try {
+    let body
+    await handler(
+      { method: 'GET', url: '/build-servers/session?session=session-demo', headers: {} },
+      {
+        writeHead() {},
+        end(payload) {
+          body = JSON.parse(payload)
+        },
+      },
+    )
+    assert.equal(body.ok, true)
+    assert.equal(body.serverId, null)
+    assert.equal(body.source, 'none')
+  } finally {
+    for (const disposer of disposers) disposer()
+    process.env.DSH_PROFILE_DIR = previous
+    await rm(dir, { recursive: true, force: true })
+  }
 })

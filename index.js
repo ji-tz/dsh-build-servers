@@ -20,13 +20,21 @@ const MAX_BODY = 256 * 1024
 const STAGE_OUTPUT_LIMIT = 128 * 1024
 const SNAPSHOT_OUTPUT_LIMIT = 64 * 1024
 const TERMINAL_OUTPUT_LIMIT = 96 * 1024
+const TERMINAL_RAW_LIMIT = 192 * 1024
 const PROBE_TIMEOUT_MS = 20_000
 const DETECT_TIMEOUT_MS = 25_000
 const PROBE_CONCURRENCY = 6
 const PROBE_CACHE_MS = 10_000
 const MAX_TERMINALS = 4
-const STAGE_KEYS = ['build', 'install', 'test']
+const STAGE_KEYS = ['configure', 'build', 'install', 'test']
 const PIPELINE_STAGES = ['sync', ...STAGE_KEYS]
+/** Commands used when the session leaves a stage empty. */
+const STAGE_DEFAULTS = {
+  configure: 'cmake ..',
+  build: 'cmake --build . -j$(nproc)',
+  install: 'cmake --install .',
+  test: 'ctest',
+}
 const DEFAULT_SYNC_EXCLUDES = '.git build node_modules .venv .dsh-plugins'
 
 /** Host services this plugin cannot work without. */
@@ -108,7 +116,7 @@ export function apply(ctx) {
           workspace,
         )
         const settings = server ? await readSettings(session) : emptySettings()
-        const probe = server ? await probeCached(server, settings.repoPath) : null
+        const probe = server ? await probeCached(server, settings.syncPath) : null
         const latest = server ? latestPipeline(server.id) : null
         return sendJson(res, 200, {
           ok: true,
@@ -119,6 +127,7 @@ export function apply(ctx) {
           servers: servers.map(({ id, name, target, enabled }) => ({ id, name, target, enabled })),
           server,
           settings,
+          defaults: sessionDefaults(session, settings, probe),
           probe,
           pipeline: latest ? snapshotPipeline(latest, false) : null,
         })
@@ -166,14 +175,19 @@ export function apply(ctx) {
         }
         const { server } = await resolveSessionServer(session)
         if (!server) {
-          return sendJson(res, 400, { ok: false, error: '当前会话还没有绑定编译服务器' })
+          return sendJson(res, 400, { ok: false, error: '当前会话是本地模式，请先在输入框工具栏选择编译服务器' })
         }
         const settings = await readSettings(session)
-        const configured = STAGE_KEYS.filter((key) => settings.stages[key])
-        if (configured.length === 0 && !settings.localPath) {
+        const configured = STAGE_KEYS.some((key) => settings.stages[key])
+        if (
+          !configured &&
+          !settings.localPath &&
+          !settings.syncPath &&
+          !settings.buildPath
+        ) {
           return sendJson(res, 400, {
             ok: false,
-            error: '请先在该会话的编译设置中填写本地源码路径或阶段命令',
+            error: '请先在该会话的编译设置中填写同步路径、本地源码路径或构建路径',
           })
         }
         const running = [...pipelines.values()].find(
@@ -237,6 +251,20 @@ export function apply(ctx) {
         const sessionId = url.searchParams.get('session')
         const session = sessionId ? terminals.get(sessionId) : undefined
         if (!session) return sendJson(res, 404, { ok: false, error: '终端会话已失效' })
+        if (url.searchParams.get('raw') === '1') {
+          const cursor = Number(url.searchParams.get('cursor')) || 0
+          return sendJson(res, 200, {
+            ok: true,
+            session: {
+              id: session.id,
+              alive: session.alive,
+              exitCode: session.exitCode,
+              transportError: session.transportError,
+              raw: terminalRawSince(session, cursor),
+              cursor: session.rawTotal,
+            },
+          })
+        }
         return sendJson(res, 200, { ok: true, session: snapshotTerminal(session) })
       }
 
@@ -363,9 +391,6 @@ export function apply(ctx) {
               id: server.id,
               name: server.name,
               target: server.target,
-              repoPath: server.repoPath,
-              localPath: server.localPath,
-              stages: server.stages,
             })),
             sessions: [...terminals.values()].map((session) => ({
               session: session.id,
@@ -508,12 +533,12 @@ export function apply(ctx) {
         const session = exec && exec.agent ? exec.agent.id : ''
         if (!isSessionId(session)) throw new Error('无法确定当前对话')
         const { server } = await resolveSessionServer(session)
-        if (!server) throw new Error('当前会话还没有绑定编译服务器，请先在对话底部绑定')
+        if (!server) throw new Error('当前会话是本地模式，请先在输入框工具栏的编译服务器选择器里选一台服务器')
         const action = args && typeof args === 'object' ? args.action : ''
 
         if (action === 'status') {
           const settings = await readSettings(session)
-          const probe = await probeCached(server, settings.repoPath)
+          const probe = await probeCached(server, settings.syncPath)
           const latest = latestPipeline(server.id)
           return {
             session,
@@ -530,8 +555,14 @@ export function apply(ctx) {
 
         if (action === 'run') {
           const settings = await readSettings(session)
-          if (STAGE_KEYS.every((key) => !settings.stages[key]) && !settings.localPath) {
-            throw new Error('当前会话还没有配置本地源码路径或阶段命令')
+          const configured = STAGE_KEYS.some((key) => settings.stages[key])
+          if (
+            !configured &&
+            !settings.localPath &&
+            !settings.syncPath &&
+            !settings.buildPath
+          ) {
+            throw new Error('当前会话还没有配置同步路径、本地源码路径或构建路径')
           }
           const running = [...pipelines.values()].find(
             (job) => job.serverId === server.id && job.status === 'running',
@@ -576,17 +607,14 @@ export function apply(ctx) {
     }),
   )
 
-  /** Session binding wins; a new session inherits the workspace's last used server. */
+  /** Session binding only: an unbound session stays local instead of inheriting a server. */
   async function resolveSessionServer(session, workspaceHint) {
     const loaded = await readStore()
     const bindings = await readBindings()
     const workspace = workspaceForSession(session) || workspaceHint || ''
-    const hasSession = Object.prototype.hasOwnProperty.call(bindings.sessions, session)
-    const boundId = hasSession
+    const boundId = Object.prototype.hasOwnProperty.call(bindings.sessions, session)
       ? bindings.sessions[session]
-      : workspace
-        ? bindings.workspaces[workspace]
-        : null
+      : null
     const server =
       boundId && typeof boundId === 'string'
         ? loaded.servers.find((entry) => entry.id === boundId && entry.enabled !== false) || null
@@ -595,7 +623,7 @@ export function apply(ctx) {
       server,
       servers: loaded.servers,
       workspace,
-      source: hasSession ? (boundId ? 'session' : 'none') : boundId ? 'workspace' : 'none',
+      source: boundId ? 'session' : 'none',
     }
   }
 
@@ -610,11 +638,32 @@ export function apply(ctx) {
     }
   }
 
-  async function probeCached(server, repoPath) {
-    const cacheKey = `${server.id}|${repoPath || ''}`
+  /** The workspace directory doubles as the local source root. */
+  function workspacePathForSession(session) {
+    try {
+      const workspace = ctx.workspaceRegistry
+        .list()
+        .find((entry) => entry.sessionIds.includes(session))
+      return workspace && workspace.path ? workspace.path : ''
+    } catch {
+      return ''
+    }
+  }
+
+  /** Values the UI offers before the session saves its own compile settings. */
+  function sessionDefaults(session, settings, probe) {
+    return {
+      localPath: workspacePathForSession(session),
+      syncPath: !settings.syncPath && probe && probe.ok ? probe.defaultPath || '' : '',
+      syncExclude: DEFAULT_SYNC_EXCLUDES,
+    }
+  }
+
+  async function probeCached(server, syncPath) {
+    const cacheKey = `${server.id}|${syncPath || ''}`
     const cached = probeCache.get(cacheKey)
     if (cached && Date.now() - cached.at < PROBE_CACHE_MS) return cached.result
-    const result = await probeServer(server, repoPath || '')
+    const result = await probeServer(server, syncPath || '')
     probeCache.set(cacheKey, { at: Date.now(), result })
     return result
   }
@@ -635,6 +684,9 @@ export function apply(ctx) {
       output: '',
       total: 0,
       trimmed: false,
+      raw: '',
+      rawTotal: 0,
+      rawTrimmed: false,
       alive: true,
       exitCode: null,
       signal: null,
@@ -649,6 +701,12 @@ export function apply(ctx) {
     session.child = child
     const append = (text) => {
       if (!text) return
+      session.rawTotal += text.length
+      session.raw += text
+      if (session.raw.length > TERMINAL_RAW_LIMIT) {
+        session.raw = session.raw.slice(-TERMINAL_RAW_LIMIT)
+        session.rawTrimmed = true
+      }
       const clean = sanitizeTerminal(text)
       if (!clean) return
       session.total += clean.length
@@ -682,9 +740,9 @@ export function apply(ctx) {
       const command =
         key === 'sync'
           ? settings.localPath
-            ? `${settings.localPath} → ${settings.repoPath}`
+            ? `${settings.localPath} → ${settings.syncPath}`
             : ''
-          : settings.stages[key] || ''
+          : stageCommandFor(settings, key)
       return {
         key,
         command,
@@ -702,7 +760,8 @@ export function apply(ctx) {
       id: `pipe_${id}`,
       serverId: server.id,
       serverName: server.name,
-      repoPath: settings.repoPath,
+      syncPath: settings.syncPath,
+      buildPath: buildPathFor(settings),
       status: 'running',
       current: null,
       startedAt: Date.now(),
@@ -868,7 +927,7 @@ export function apply(ctx) {
             'ssh',
             [
               ...sshArguments(server),
-              `mkdir -p ${remotePath(settings.repoPath)} && tar -xf - -C ${remotePath(settings.repoPath)}`,
+              `mkdir -p ${remotePath(settings.syncPath)} && tar -xf - -C ${remotePath(settings.syncPath)}`,
             ],
             { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
           )
@@ -919,7 +978,7 @@ export function apply(ctx) {
             finish(code, signal, new Error(`tar 退出码 ${tarCode}`))
             return
           }
-          append(`\n[同步] 已上传 ${formatBytes(stage.bytes)} 到 ${settings.repoPath}\n`)
+          append(`\n[同步] 已上传 ${formatBytes(stage.bytes)} 到 ${settings.syncPath}\n`)
           finish(code, signal, null)
         })
       }
@@ -944,9 +1003,9 @@ async function probeAll(servers) {
   return results
 }
 
-async function probeServer(server, repoPath) {
+async function probeServer(server, syncPath) {
   const started = Date.now()
-  const run = await runSsh(server, probeCommand(repoPath), PROBE_TIMEOUT_MS)
+  const run = await runSsh(server, probeCommand(syncPath), PROBE_TIMEOUT_MS)
   const latencyMs = Date.now() - started
   if (run.error || run.timedOut || run.code !== 0) {
     return {
@@ -1011,7 +1070,7 @@ async function probeServer(server, repoPath) {
 }
 
 /** Shell helper: POSIX, read-only, one round trip, never fails the whole probe. */
-function probeCommand(repoPath) {
+function probeCommand(syncPath) {
   const lines = [
     `printf 'hostname=%s\\n' "$(hostname 2>/dev/null)"`,
     `ipaddr=$(hostname -I 2>/dev/null | awk '{print $1}'); [ -n "$ipaddr" ] || ipaddr=$(hostname -i 2>/dev/null | awk '{print $1}'); printf 'ip=%s\\n' "$ipaddr"`,
@@ -1034,10 +1093,13 @@ function probeCommand(repoPath) {
     `printf 'tool_gcc=%s\\n' "$(gcc --version 2>/dev/null | head -n 1)"`,
     `printf 'tool_python=%s\\n' "$(python3 --version 2>/dev/null)"`,
   ]
-  if (repoPath) {
-    const path = remotePath(repoPath)
+  const diskPath = syncPath ? remotePath(syncPath) : '"$HOME"'
+  lines.push(
+    `printf 'disk=%s\\n' "$(df -Pk ${diskPath} 2>/dev/null | awk 'NR==2{print $2\",\"$3\",\"$4\",\"$5}')"`,
+  )
+  if (syncPath) {
+    const path = remotePath(syncPath)
     lines.push(
-      `printf 'disk=%s\\n' "$(df -Pk ${path} 2>/dev/null | awk 'NR==2{print $2\",\"$3\",\"$4\",\"$5}')"`,
       `printf 'branch=%s\\n' "$(git -C ${path} rev-parse --abbrev-ref HEAD 2>/dev/null)"`,
       `printf 'commit=%s\\n' "$(git -C ${path} log -1 --format=%h 2>/dev/null)"`,
       `printf 'subject=%s\\n' "$(git -C ${path} log -1 --format=%s 2>/dev/null)"`,
@@ -1101,9 +1163,21 @@ async function serverForDetection(body) {
 
 /* ------------------------------------------------------------------ build */
 
+/** Commands run in the build path; its default is <sync path>/build. */
+function buildPathFor(settings) {
+  if (settings.buildPath) return settings.buildPath
+  const syncPath = String(settings.syncPath || '').replace(/\/+$/, '')
+  return syncPath ? `${syncPath}/build` : '~'
+}
+
+/** An empty stage falls back to the built-in command for that stage. */
+function stageCommandFor(settings, key) {
+  return (settings.stages && settings.stages[key]) || STAGE_DEFAULTS[key] || ''
+}
+
 /** Builds run through `bash -lc` so a login-shell toolchain reaches them. */
 function stageCommand(server, settings, command) {
-  const body = `cd ${remotePath(settings.repoPath || '~')} && ${command}`
+  const body = `cd ${remotePath(buildPathFor(settings))} && ${command}`
   return `bash -lc ${shellQuote(body)}`
 }
 
@@ -1248,7 +1322,13 @@ function settingsFile() {
 }
 
 function emptySettings() {
-  return { repoPath: '', localPath: '', syncExclude: '', stages: { build: '', install: '', test: '' } }
+  return {
+    syncPath: '',
+    buildPath: '',
+    localPath: '',
+    syncExclude: '',
+    stages: { configure: '', build: '', install: '', test: '' },
+  }
 }
 
 async function readAllSettings() {
@@ -1393,16 +1473,20 @@ function normalizeServer(input, index, existingId) {
 /** Build paths and commands belong to one session, not to the server entry. */
 function normalizeSettings(input) {
   const problems = []
-  const repoPath = text(input?.repoPath, 512)
-  if (repoPath && /[\r\n\0]/.test(repoPath)) {
-    problems.push('repoPath 不能包含换行或空字符')
+  const syncPath = text(input?.syncPath, 512) || text(input?.repoPath, 512)
+  if (syncPath && /[\r\n\0]/.test(syncPath)) {
+    problems.push('syncPath 不能包含换行或空字符')
+  }
+  const buildPath = text(input?.buildPath, 512)
+  if (buildPath && /[\r\n\0]/.test(buildPath)) {
+    problems.push('buildPath 不能包含换行或空字符')
   }
   const localPath = text(input?.localPath, 512)
   if (localPath && /[\r\n\0]/.test(localPath)) {
     problems.push('localPath 不能包含换行或空字符')
   }
-  if (localPath && !repoPath) {
-    problems.push('配置本地源码路径时必须填写远端构建路径')
+  if (localPath && !syncPath) {
+    problems.push('配置本地源码路径时必须填写同步路径')
   }
   const syncExclude = text(input?.syncExclude, 500)
   const rawStages =
@@ -1410,6 +1494,7 @@ function normalizeSettings(input) {
       ? input.stages
       : {}
   const stages = {
+    configure: text(rawStages.configure, 2000),
     build: text(rawStages.build, 2000),
     install: text(rawStages.install, 2000),
     test: text(rawStages.test, 2000),
@@ -1418,7 +1503,7 @@ function normalizeSettings(input) {
     if (stages[key].includes('\0')) problems.push(`stages.${key} 包含空字符`)
   }
   return {
-    settings: { repoPath, localPath, syncExclude, stages },
+    settings: { syncPath, buildPath, localPath, syncExclude, stages },
     problems,
   }
 }
@@ -1486,7 +1571,8 @@ function snapshotPipeline(job, withOutput) {
     id: job.id,
     serverId: job.serverId,
     serverName: job.serverName,
-    repoPath: job.repoPath,
+    syncPath: job.syncPath,
+    buildPath: job.buildPath,
     status: job.status,
     current: job.current,
     startedAt: job.startedAt,
@@ -1577,6 +1663,14 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`
 }
 
+/** Raw (ANSI-preserving) terminal text after a cursor, clamped to the retained buffer. */
+function terminalRawSince(session, cursor) {
+  const value = Number(cursor)
+  const from = Number.isFinite(value) && value > 0 ? value : 0
+  const start = Math.max(0, from - (session.rawTotal - session.raw.length))
+  return session.raw.slice(start)
+}
+
 /** Text received after a cursor, clamped to what the trimmed buffer still holds. */
 function terminalSince(session, cursor) {
   const value = Number(cursor)
@@ -1605,6 +1699,8 @@ function sanitizeTerminal(value) {
 
 /** Pure helpers exposed for the Node test suite; the Loader ignores this export. */
 export const __test = {
+  buildPathFor,
+  stageCommandFor,
   formatBytes,
   normalizeServer,
   normalizeSettings,
@@ -1613,5 +1709,6 @@ export const __test = {
   remotePath,
   sanitizeTerminal,
   shellQuote,
+  terminalRawSince,
   terminalSince,
 }

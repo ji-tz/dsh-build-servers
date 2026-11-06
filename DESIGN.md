@@ -25,21 +25,25 @@ enabled                         是否参与探测
 构建路径和命令属于**会话**，在对话底部的「编译设置」里配置：
 
 ```text
-localPath                       本机待上传目录（可空，空则跳过上传）
-repoPath                        远端构建路径（可空，空则探测时给出建议）
+localPath                       本机待上传目录（默认当前工作区；清空则跳过上传）
+syncPath                        同步路径：本地源码复制到远端的目录（默认取探测建议）
+buildPath                       构建路径：配置/构建/安装/测试命令的工作目录；留空则为 <syncPath>/build
 syncExclude                     上传排除模式，默认 .git build node_modules .venv .dsh-plugins
-stages.build / install / test   按顺序执行的命令，可空
+stages.configure                配置命令，留空则采用 cmake ..
+stages.build / install / test   构建/安装/测试命令，留空则分别采用 cmake --build . -j$(nproc) / cmake --install . / ctest
 ```
 
-绑定是**按会话**的（`sessions`）；某个工作区会记住最近一次采用的服务器（`workspaces`），新建会话默认采用它，但不会覆盖显式解绑（`sessions[session] = null`）。`POST /probe` 读取发行版、内核、架构、用户、工具链版本、负载、内存、磁盘、Git 状态。
+「编译设置」打开时用 Host 返回的 `defaults` 预填空白项：`localPath` 取会话所属工作区目录，`syncPath` 取只读探测发现的工程路径，`syncExclude` 取插件默认值；`buildPath` 不预填，留空时按 `<syncPath>/build` 生效。用户仍可改或清空。
 
-## 3. 流水线：sync → build → install → test
+绑定是**按会话**的（`sessions`）：新建会话默认是「本地」，在输入框工具栏（`conversation.input.left`，「工作区内修改」右侧）的编译服务器选择器里显式绑定；`workspaces` 仍记录最近一次采用的服务器，但不再被自动继承，只有显式选择才会写入会话绑定，`sessions[session] = null` 表示显式本地。`POST /probe` 读取发行版、内核、架构、用户、工具链版本、负载、内存、磁盘、Git 状态。
 
-- `sync`：本机 `tar -cf -` 通过管道送入 `ssh target 'mkdir -p <repo> && tar -xf - -C <repo>'`；两个子进程直接 pipe，不经过本地 shell，不需要 Windows 上有 rsync。阶段实时累计字节数，UI 显示已上传大小。
-- `build/install/test`：每阶段一次 `ssh target "bash -lc 'cd <repo> && <command>'"`，用登录 shell 拿到构建机的工具链环境。
+## 3. 流水线：sync → configure → build → install → test
+
+- `sync`：本机 `tar -cf -` 通过管道送入 `ssh target 'mkdir -p <syncPath> && tar -xf - -C <syncPath>'`；两个子进程直接 pipe，不经过本地 shell，不需要 Windows 上有 rsync。阶段实时累计字节数，UI 显示已上传大小。
+- `configure/build/install/test`：每阶段一次 `ssh target "bash -lc 'cd <buildPath> && <command>'"`，用登录 shell 拿到构建机的工具链环境；`buildPath` 留空时取 `<syncPath>/build`，阶段命令留空时取内置默认（cmake .. / cmake --build . -j$(nproc) / cmake --install . / ctest）。
 - 失败即停：当前阶段 `failed`，后续阶段 `skipped`；用户停止时杀掉当前 SSH（同步阶段连同 tar 一起杀），状态为 `stopped`。
 - 每阶段输出上限 128 KiB，接口快照保留尾部 64 KiB；状态、退出码、耗时每秒轮询。
-- 配置了 `localPath` 但没有 `repoPath` 会在保存时被拒绝，避免把源码解到 `$HOME`。
+- 配置了 `localPath` 但没有 `syncPath` 会在保存时被拒绝，避免把源码解到 `$HOME`。
 
 ## 4. 终端
 
@@ -50,6 +54,8 @@ stages.build / install / test   按顺序执行的命令，可空
 - `POST /terminal/close` 结束会话。
 
 工作目录和环境变量在会话内保持；输出去掉 ANSI 转义并按行显示，适合构建、`git`、`ctest` 这类命令，不承诺 vim/top 这类全屏程序。同一服务器已有存活会话时，面板和工具都会复用它，而不是再开一条 SSH。
+
+右侧栏引导页新增一张独立的「新建远程终端」卡片（`build-server-terminal` 标签类型）：点击后打开一个标签，按当前会话的编译服务器打开/复用同一条 SSH shell，输出与输入走同一组 `/terminal` 接口。会话是「本地」时，标签内提示先选择编译服务器。原「新建终端」卡片及其本地 shell 菜单保持不动。
 
 ## 5. 把模型的工具调用接到这条终端
 
@@ -86,13 +92,15 @@ close()
 
 ## 7. 对话内嵌（当前形态）
 
-- `conversation.composer.dock` 里注册 `build-servers-mini`：输入框**最下排**只有一个状态点和服务器名，没有 `⋯` 按钮。
-- 状态点：绿色=在线空闲，绿色闪烁=流水线运行中，黄色=延迟高于 1200ms，红色=探测无响应，灰色=未绑定/尚未探测。
-- 点击状态点打开详情对话框：OS/IP、负载/内存/磁盘/运行时长、上传/构建/安装/测试各阶段状态与耗时，以及构建/停止、终端、编译设置、解绑、配置、切换服务器。
-- 绑定属于**会话**，默认没有绑定；工作区记住最近一次采用的服务器，新会话默认采用，但不覆盖显式解绑（`sessions[session] = null`）。
-- 构建路径、上传目录和 build/install/test 命令放在 `build-server-settings.json`，按会话保存；详情对话框里的「编译设置」编辑它们。
-- 「新建终端」在详情对话框里就地展开，和面板、Agent 工具共用同一个 per-server 会话。
+- `conversation.composer.dock` 里注册 `build-servers-mini`：绑定服务器后显示一个绿色小状态灯 + 状态文字，本地会话不渲染；没有 `⋯` 按钮。
+- 状态文字：就绪、上传、配置、构建、安装、测试（流水线当前阶段）、重连（探测中/请求失败）、断开（SSH 探测失败）；状态灯依次为绿、绿色闪烁、品牌色呼吸、红。
+- 点击状态胶囊弹出状态小窗：负载、内存、磁盘、运行时长，以及 就绪/上传/配置/构建/安装/测试/重连/断开 状态条（当前状态灰底高亮）；小窗只有一个「编译设置」入口，直接打开本会话的编译设置。
+- 「编译设置」对话框编辑本会话的项目相关内容（本地源码、同步路径、构建路径、排除、各阶段命令），可从状态小窗或输入框选择器里当前服务器右侧的「编译设置」打开；编译服务器本身（网络条目）只在左侧「编译服务器」面板维护。
+- 绑定属于**会话**，默认是「本地」；输入框工具栏里的编译服务器选择器（「工作区内修改」右侧）在新建会话时就能选服务器，默认「本地」，之后也可随时切换。
+- 状态栏只在绑定服务器时出现，状态文字见上；工作区记录的最近服务器只作记录，不再自动继承。
+- 构建路径、上传目录和 configure/build/install/test 命令放在 `build-server-settings.json`，按会话保存；「编译设置」编辑它们，空白项按工作区/探测默认值预填。
+- 「新建终端」在编译服务器对话框里就地展开，和面板、Agent 工具共用同一个 per-server 会话。
 - 左侧「编译服务器」面板只配置网络条目（名称、target、端口、启用）；`配置` 调 `ctx.layout.selectPanel('build-servers')` 打开它。
-- Agent 端 `build_server` 工具（`status / run / pipeline / stop`）用 `exec.agent.id` 找到会话，再按会话绑定（或工作区默认）找服务器和会话设置；没有绑定时明确报错，不会猜测服务器。
-- 会话行右边的 `⋯` 菜单（pin/rename/fork/archive）有扩展 slot，已加入 `编译服务器…`：打开后选服务器绑定/解绑，并能进入该会话的「编译设置」。
+- Agent 端 `build_server` 工具（`status / run / pipeline / stop`）用 `exec.agent.id` 找到会话，再按会话绑定找服务器和会话设置；没有显式绑定时按「本地」处理，不会猜测服务器。
+- 会话行和右侧标签的 `⋯` 菜单都不再注册插件入口；绑定/解绑和切换服务器统一从输入框工具栏的编译服务器选择器完成。
 - 工作区行右边的 `⋯` 菜单（重命名/删除工作区）是内置 UI，没有插件 slot；工作区级别没有绑定入口。

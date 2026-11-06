@@ -1,6 +1,6 @@
 {
   "name": "dsh-build-servers",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "A DeepSeek Harness bundle for remote build servers: per-session binding, source upload, build/install/test pipeline, and SSH terminals.",
   "license": "MIT",
@@ -37,6 +37,7 @@
     "DESIGN.md",
     "README.md",
     "README.zh.md",
+    "THIRD-PARTY-NOTICES.md",
     "LICENSE",
     "docs/*.png",
     "market/index.json",
