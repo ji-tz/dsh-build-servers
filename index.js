@@ -1602,3 +1602,16 @@ function sanitizeTerminal(value) {
     .replace(/\r/g, '\n')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
 }
+
+/** Pure helpers exposed for the Node test suite; the Loader ignores this export. */
+export const __test = {
+  formatBytes,
+  normalizeServer,
+  normalizeSettings,
+  parseDisk,
+  parseKeyValues,
+  remotePath,
+  sanitizeTerminal,
+  shellQuote,
+  terminalSince,
+}

@@ -1,0 +1,63 @@
+{
+  "format": 1,
+  "title": {
+    "en": "DSH Build Servers",
+    "zh": "DSH 编译服务器"
+  },
+  "description": {
+    "en": "Remote build machines inside a DeepSeek Harness conversation.",
+    "zh": "在 DeepSeek Harness 对话里使用远端编译机。"
+  },
+  "metadata": {
+    "categories": {
+      "developer-tools": {
+        "title": {
+          "en": "Developer tools",
+          "zh": "开发者工具"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "@local/build-servers",
+      "title": {
+        "en": "DSH Build Servers",
+        "zh": "DSH 编译服务器"
+      },
+      "description": {
+        "en": "Bind one remote build server per session, upload local source, run build/install/test, watch the result, and open an SSH terminal.",
+        "zh": "每个会话绑定一台远端编译机，上传本地源码，执行构建/安装/测试，查看结果并打开 SSH 终端。"
+      },
+      "icon": "../icon.svg",
+      "author": "ji-tz",
+      "homepage": "https://github.com/ji-tz/dsh-build-servers#readme",
+      "repository": {
+        "url": "https://github.com/ji-tz/dsh-build-servers"
+      },
+      "metadata": {
+        "category": "developer-tools",
+        "keywords": [
+          "remote-build",
+          "ssh",
+          "terminal",
+          "build-server"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793930006,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/ji-tz/dsh-build-servers",
+            "commit": "f0a1d3cd4c0dffce41edaa51270038a1ced05f08"
+          },
+          "engines": {
+            "dsh": ">=0.2.0 <0.3.0"
+          }
+        }
+      ]
+    }
+  ]
+}

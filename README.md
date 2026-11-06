@@ -1,6 +1,10 @@
 # DSH Build Servers
 
+English | [中文](README.zh.md)
+
 A DeepSeek Harness bundle for working with remote build machines from inside a conversation: bind one server to the current session, upload local source, run **build → install → test**, watch the result, and open an SSH shell without leaving the chat.
+
+![Build server status chip](docs/status-chip.png)
 
 > Status: v0.1.0, early but usable. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
 
@@ -13,6 +17,31 @@ A DeepSeek Harness bundle for working with remote build machines from inside a c
 - **SSH terminal** — a persistent `ssh -tt … bash -l` per server, shared by the UI, the session dialog, and the agent tools. Line mode (no full-screen TUI).
 - **Conversation status chip** — a green/amber/red dot plus the server name at the bottom of the composer; clicking opens an in-place status popover with load, memory, disk, uptime, and the current pipeline stage.
 - **Agent tools** — `build_server` (`status` / `run` / `pipeline` / `stop`) and `remote_terminal` (`list` / `open` / `send` / `read` / `close`), so the model can drive the same server and shell as the UI.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Page["DSH Web page"]
+    Panel["Build servers panel<br/>network entries + probe"]
+    Chip["Composer status chip<br/>+ status popover"]
+    Menus["Session menu / right tab menu<br/>bind · settings · terminal"]
+  end
+  subgraph Host["dsh Host process"]
+    Route["HTTP route /build-servers"]
+    State["Server store<br/>session bindings<br/>session settings"]
+    Jobs["Probe cache<br/>pipeline jobs<br/>terminal sessions"]
+    Tools["Agent tools<br/>build_server · remote_terminal"]
+  end
+  Build["Remote build host<br/>OpenSSH + POSIX shell"]
+  Page -->|same-origin fetch| Route
+  Route --> State
+  Route --> Jobs
+  Tools --> Jobs
+  Jobs -->|ssh / tar| Build
+```
+
+The browser never talks to SSH directly: every operation goes through a same-origin Host route, and the Host owns the server list, probes, pipelines, and terminals.
 
 ## Requirements
 
@@ -40,6 +69,16 @@ plugin_manager install_bundle
 If the package lives in a subdirectory of a larger repository, append `&path:/build-servers` to the Git spec.
 
 The plugin is enabled immediately. If the sidebar or composer does not show the new entries, reload the page once (`Ctrl+R`); the client half is served as a bundle.
+
+### From a plugin market index
+
+This repository ships a format-1 market index at [`market/index.json`](market/index.json). Add its raw URL in Settings → Plugins → Discover (the experimental plugin-market bundle must be enabled):
+
+```text
+https://raw.githubusercontent.com/ji-tz/dsh-build-servers/main/market/index.json
+```
+
+The index currently points at a commit-pinned Git source. After the first npm release it can point at the registry version instead.
 
 ## Use
 
@@ -72,7 +111,7 @@ Nothing is written to the remote machine except the uploaded source and whatever
 - The terminal is line-oriented; full-screen applications (`vim`, `top`) are not supported.
 - The status popover and the build dialog use frame-level overlays; they are positioned from the chip's bounding box and close on outside click / `Escape`.
 - The bundle is not published to an npm registry under a public scope yet; the package name is still `@local/build-servers`. The GitHub repository is the source of truth for now.
-- No automated UI tests. Host-side behavior is exercised manually against a real build machine.
+- Host helper tests run with Node; the UI has no automated tests.
 
 ## Development
 
@@ -84,8 +123,17 @@ The bundle is plain JavaScript; there is no build step.
 | `client.js` | Browser half: sidebar panel, status chip, dialogs, menus, terminal UI |
 | `cordis.patch.yml` | Loader row inserted into the profile |
 | `DESIGN.md` | Architecture and design notes |
+| `market/index.json` | Format-1 plugin market index for the Discover tab |
+| `test/host.test.js` | Node tests for the pure Host helpers |
+| `docs/status-chip.png` | Status chip screenshot used above |
 | `locale/*.json` | Plugin Manager metadata (title/description) |
 | `icon.svg` | Bundle icon |
+
+Run the tests with:
+
+```text
+npm test
+```
 
 After editing, reload the plugin from Plugin Manager (toggle it off/on) and refresh the page. The Host reads `index.js` at activation; the browser reads the served Client bundle on page load.
 
