@@ -5,6 +5,9 @@
   "description": "A DeepSeek Harness bundle for remote build servers: per-session binding, source upload, build/install/test pipeline, and SSH terminals.",
   "license": "MIT",
   "author": "ji-tz",
+  "engines": {
+    "dsh": ">=0.2.0 <0.3.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ji-tz/dsh-build-servers.git"
