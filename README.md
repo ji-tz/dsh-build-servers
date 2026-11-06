@@ -1,6 +1,6 @@
 # DSH Build Servers
 
-A [DeepSeek Harness](https://github.com/deepseek-ai) bundle for working with remote build machines from inside a conversation: bind one server to the current session, upload local source, run **build → install → test**, watch the result, and open an SSH shell without leaving the chat.
+A DeepSeek Harness bundle for working with remote build machines from inside a conversation: bind one server to the current session, upload local source, run **build → install → test**, watch the result, and open an SSH shell without leaving the chat.
 
 > Status: v0.1.0, early but usable. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
 
