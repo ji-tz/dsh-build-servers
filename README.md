@@ -6,7 +6,7 @@ A DeepSeek Harness bundle for working with remote build machines from inside a c
 
 ![Build server status chip](docs/status-chip.png)
 
-> Status: v1.0.0. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
+> Status: v1.0.1. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
 
 ## Features
 
@@ -52,11 +52,11 @@ The browser never talks to SSH directly: every operation goes through a same-ori
 
 ## Install
 
-From npm (recommended for v1.0.0 and later):
+From npm (recommended for v1.0.1 and later):
 
 ```text
 plugin_manager install_bundle
-  target: dsh-build-servers@1.0.0
+  target: dsh-build-servers@1.0.1
 ```
 
 From a checkout of this repository:
@@ -117,7 +117,7 @@ Nothing is written to the remote machine except the uploaded source and whatever
 
 - The terminal is line-oriented; full-screen applications (`vim`, `top`) are not supported.
 - The status popover and the build dialog use frame-level overlays; they are positioned from the chip's bounding box and close on outside click / `Escape`.
-- The bundle is published as [`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers) on npm; `1.0.0` is the first stable release. The GitHub repository remains the source of truth.
+- The bundle is published as [`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers) on npm; `1.0.1` is the current stable release (`1.0.0` was the first). The GitHub repository remains the source of truth.
 - Host helper tests run with Node; the UI has no automated tests.
 
 ## Development

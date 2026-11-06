@@ -6,7 +6,7 @@
 
 ![编译服务器状态栏](docs/status-chip.png)
 
-> 状态：v1.0.0。已在 Windows 客户端 + Red Hat Enterprise Linux 8 编译机上验证。它不是 CI 系统，只是一座小而可检查的桥：一次连一台机器。
+> 状态：v1.0.1。已在 Windows 客户端 + Red Hat Enterprise Linux 8 编译机上验证。它不是 CI 系统，只是一座小而可检查的桥：一次连一台机器。
 
 ## 功能
 
@@ -52,11 +52,11 @@ flowchart LR
 
 ## 安装
 
-从 npm 安装（v1.0.0 起推荐）：
+从 npm 安装（v1.0.1 起推荐）：
 
 ```text
 plugin_manager install_bundle
-  target: dsh-build-servers@1.0.0
+  target: dsh-build-servers@1.0.1
 ```
 
 从本仓库 checkout 安装：
@@ -117,7 +117,7 @@ https://raw.githubusercontent.com/ji-tz/dsh-build-servers/main/market/index.json
 
 - 终端是行模式，不支持 `vim`、`top` 这类全屏程序。
 - 状态小窗和编译设置/编译服务器弹窗使用框架级浮层，按状态点坐标定位，点击外部或 Esc 关闭。
-- 已发布到 npm：[`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers)，`1.0.0` 是首个稳定版本；GitHub 仓库仍是事实来源。
+- 已发布到 npm：[`dsh-build-servers`](https://www.npmjs.com/package/dsh-build-servers)，`1.0.1` 是当前稳定版本（`1.0.0` 是首个稳定版）；GitHub 仓库仍是事实来源。
 - Host 纯函数有 Node 测试；UI 还没有自动化测试。
 
 ## 开发
