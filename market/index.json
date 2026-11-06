@@ -46,12 +46,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1793930006,
+          "version": "0.1.1",
+          "publishTimestamp": 1793930329,
           "source": {
             "type": "git",
             "url": "https://github.com/ji-tz/dsh-build-servers",
-            "commit": "f0a1d3cd4c0dffce41edaa51270038a1ced05f08"
+            "commit": "27904a264029097a8f6883d9163cdf347b3cde28"
           },
           "engines": {
             "dsh": ">=0.2.0 <0.3.0"
@@ -61,3 +61,4 @@
     }
   ]
 }
+
