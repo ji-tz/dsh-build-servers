@@ -1108,7 +1108,7 @@ function probeCommand(syncPath) {
     )
   } else {
     lines.push(
-      `p=$(find "$HOME/NIS/src" "$HOME/src" -maxdepth 2 \\( -name CMakeLists.txt -o -name build.sh \\) 2>/dev/null | head -n 1); [ -n "$p" ] && printf 'default_path=%s\\n' "$(dirname "$p")"`,
+      `p=$(find "$HOME/src" -maxdepth 2 \\( -name CMakeLists.txt -o -name build.sh \\) 2>/dev/null | head -n 1); [ -n "$p" ] && printf 'default_path=%s\\n' "$(dirname "$p")"`,
     )
   }
   return lines.join('; ')
@@ -1117,7 +1117,7 @@ function probeCommand(syncPath) {
 /** Candidate project roots for the path picker. */
 function detectCommand() {
   return [
-    `for r in "$HOME/NIS/src" "$HOME/src" "$HOME/workspace" "$HOME/projects" "$HOME"; do`,
+    `for r in "$HOME/src" "$HOME/workspace" "$HOME/projects" "$HOME"; do`,
     `[ -d "$r" ] || continue;`,
     `find "$r" -maxdepth 3 \\( -name .git -o -name CMakeLists.txt -o -name build.sh -o -name Makefile \\) -prune -printf '%h|%f\\n' 2>/dev/null;`,
     `done | head -n 80`,

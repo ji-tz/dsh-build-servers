@@ -181,12 +181,12 @@ test('a new session stays local instead of inheriting the workspace server', asy
     join(dir, 'build-servers.json'),
     JSON.stringify({
       version: 2,
-      servers: [{ id: 'srv_server68', name: 'server-68', target: 'server-68', enabled: true }],
+      servers: [{ id: 'srv_buildhost', name: 'build-host', target: 'build-host', enabled: true }],
     }),
   )
   await writeFile(
     join(dir, 'build-server-bindings.json'),
-    JSON.stringify({ workspaces: { ws_demo: 'srv_server68' }, sessions: {} }),
+    JSON.stringify({ workspaces: { ws_demo: 'srv_buildhost' }, sessions: {} }),
   )
   let handler
   const disposers = []
