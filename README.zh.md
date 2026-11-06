@@ -52,11 +52,11 @@ flowchart LR
 
 ## 安装
 
-从 npm 安装（v1.0.1 起推荐）：
+从 npm 安装（跟随最新稳定版）：
 
 ```text
 plugin_manager install_bundle
-  target: dsh-build-servers@1.0.1
+  target: dsh-build-servers@latest
 ```
 
 从本仓库 checkout 安装：

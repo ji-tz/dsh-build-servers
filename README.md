@@ -52,11 +52,11 @@ The browser never talks to SSH directly: every operation goes through a same-ori
 
 ## Install
 
-From npm (recommended for v1.0.1 and later):
+From npm (follows the newest stable release):
 
 ```text
 plugin_manager install_bundle
-  target: dsh-build-servers@1.0.1
+  target: dsh-build-servers@latest
 ```
 
 From a checkout of this repository:
