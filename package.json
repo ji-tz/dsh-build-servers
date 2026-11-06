@@ -1,0 +1,53 @@
+{
+  "name": "@local/build-servers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A DeepSeek Harness bundle for remote build servers: per-session binding, source upload, build/install/test pipeline, and SSH terminals.",
+  "license": "MIT",
+  "author": "ji-tz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ji-tz/dsh-build-servers.git"
+  },
+  "homepage": "https://github.com/ji-tz/dsh-build-servers#readme",
+  "bugs": {
+    "url": "https://github.com/ji-tz/dsh-build-servers/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "remote-build",
+    "ssh",
+    "terminal"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "DESIGN.md",
+    "README.md",
+    "LICENSE",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

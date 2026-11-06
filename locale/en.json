@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Remote Build Servers",
+    "description": "Configure build machines, upload source, run build → install → test, and open a remote shell from the sidebar."
+  }
+}
