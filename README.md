@@ -6,7 +6,7 @@ A DeepSeek Harness bundle for working with remote build machines from inside a c
 
 ![Build server status chip](docs/status-chip.png)
 
-> Status: v0.1.0, early but usable. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
+> Status: v0.1.1, early but usable. The bundle is tested against a Red Hat Enterprise Linux 8 build host from Windows. It is not a CI system; it is a small, inspectable bridge to one machine at a time.
 
 ## Features
 

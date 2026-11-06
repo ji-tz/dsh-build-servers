@@ -6,7 +6,7 @@
 
 ![编译服务器状态栏](docs/status-chip.png)
 
-> 状态：v0.1.0，早期但可用。已在 Windows 客户端 + Red Hat Enterprise Linux 8 编译机上验证。它不是 CI 系统，只是一座小而可检查的桥：一次连一台机器。
+> 状态：v0.1.1，早期但可用。已在 Windows 客户端 + Red Hat Enterprise Linux 8 编译机上验证。它不是 CI 系统，只是一座小而可检查的桥：一次连一台机器。
 
 ## 功能
 
