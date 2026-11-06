@@ -20,7 +20,7 @@
   },
   "plugins": [
     {
-      "name": "@local/build-servers",
+      "name": "dsh-build-servers",
       "title": {
         "en": "DSH Build Servers",
         "zh": "DSH 编译服务器"
@@ -46,12 +46,10 @@
       },
       "versions": [
         {
-          "version": "0.1.1",
-          "publishTimestamp": 1793930329,
+          "version": "0.2.0",
+          "publishTimestamp": 1793905270,
           "source": {
-            "type": "git",
-            "url": "https://github.com/ji-tz/dsh-build-servers",
-            "commit": "27904a264029097a8f6883d9163cdf347b3cde28"
+            "type": "npm"
           },
           "engines": {
             "dsh": ">=0.2.0 <0.3.0"
@@ -61,4 +59,3 @@
     }
   ]
 }
-

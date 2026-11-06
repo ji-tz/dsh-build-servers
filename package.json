@@ -1,7 +1,6 @@
 {
-  "name": "@local/build-servers",
-  "version": "0.1.1",
-  "private": true,
+  "name": "dsh-build-servers",
+  "version": "0.2.0",
   "type": "module",
   "description": "A DeepSeek Harness bundle for remote build servers: per-session binding, source upload, build/install/test pipeline, and SSH terminals.",
   "license": "MIT",
